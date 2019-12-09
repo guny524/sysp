@@ -12,17 +12,19 @@ LIBOBJS = ${LIBSRC:.c=.o}
 
 SERVER = server
 CLIENT = client
+COMMUTE = commute
+PRINT = print
 
 $@.o : $@.c
 	$(CC) $(CFLAGS) -c -o $<
 
 all: sv cl
 
-sv: ${LIBOBJS} ${OBJECTS}
-	${CC} -o ${SERVER} ${SERVER:=.c} ${LDFLAGS} ${LIBOBJS} ${CFLAGS}
+sv: ${LIBOBJS} ${SERVER:=.o} ${COMMUTE:=.o} ${PRINT:=.o}
+	${CC} -o ${SERVER} ${SERVER:=.o} ${COMMUTE:=.o} ${PRINT:=.o} ${LDFLAGS} ${LIBOBJS} ${CFLAGS}
 
-cl: ${LIBOBJS} ${OBJECTS2}
-	${CC} -o ${CLIENT} ${CLIENT:=.c} ${LDFLAGS} ${LIBOBJS} ${CFLAGS}
+cl: ${LIBOBJS} ${CLINET:=.o} ${COMMUTE:=.o} ${PRINT:=.o}
+	${CC} -o ${CLIENT} ${CLIENT:=.o} ${COMMUTE:=.o} ${PRINT:=.o} ${LDFLAGS} ${LIBOBJS} ${CFLAGS}
 
 rm :
-	${RM} ${SERVER} ${CLIENT} ${LIBOBJS} core tags
+	${RM} *.o ${SERVER} ${CLIENT} ${LIBOBJS} core tags
