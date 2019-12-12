@@ -1,3 +1,4 @@
+//블락된 시점에서 클라이언트에 응답 안해도 되냐
 #include<pthread.h>
 #inlcude<time.h>
 
@@ -28,20 +29,25 @@ void receive_from(void *sock_fd)
     int length;
     int sock = *(int*)sock_fd;
 
-    pthread_mutex_lock (&receive_mutex);    //#서버 입장에서 각 fd에서 연속적으로 읽고 저장할 때 뮤텍스
     //#미리 앞부분에 유저 넣는거 비워 놓고 str 파일에 저장
-    while (1)
+    while ((length = read(sock, &m, size(Message)) != 0)//클라이언트가 끊어지면 read 리턴이 0이 되고 클라이언트 값이 없으면 기다림
     {
-        //#클라이언트가 끊어지면 read 리턴이 0이 되냐에 따라 read가 뮤텍스 바깥으로 갈지도 모름
-        if((length = read(sock, &m, size(Message)) != 0)
-            break;
+        //파일에 저장할때 그냥 한줄 쓰고 저장하고 모든 판단을 프린터에서 함
+        pthread_mutex_lock (&receive_mutex);    //서버 입장에서 sock_fd에서 읽고 파일 fd에 저장할 때 뮤텍스
         fputs(m.str, stdout);//# print로 바꿔야 함
+        pthread_mutex_unlock (&receive_mutex);
         buff_flush(m.str, strlen(m.str));
     }
     //#str 쓰는거 끝나고 user랑 시간 파일에 저장
-    pthread_mutex_unlock (&receive_mutex);
     t = time(NULL);
     close(sock);
+}
+
+void save_at(void *fd, void *message)
+{
+    int f = *(int*)fd;
+    Message m = *(Message*)message;
+    
 }
 
 void buff_flush(char *buff, int size)

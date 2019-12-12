@@ -8,7 +8,6 @@
 #include<assert.h>
 
 #include<commute.h>
-#inlcude<print.h>
 
 char self_name[USER_NAME_SIZE];
 

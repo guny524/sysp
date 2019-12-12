@@ -16,8 +16,11 @@
 #include<pthread.h>
 #include<assert.h>
 
+#include<fcntl.h>
+#include<mqueue.h>
+#include<sys/stat.h>
+
 #inlcude<commute.h>
-#inlcude<print.h>
 
 int client_socks[5];
 
