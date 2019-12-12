@@ -1,10 +1,6 @@
-//블락된 시점에서 클라이언트에 응답 안해도 되냐
-#include<pthread.h>
 #inlcude<time.h>
 
 #include<commute.h>
-
-static pthread_mutex_t receive_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void send_to(void *socket, void *message)
 {
@@ -41,13 +37,6 @@ void receive_from(void *sock_fd)
     //#str 쓰는거 끝나고 user랑 시간 파일에 저장
     t = time(NULL);
     close(sock);
-}
-
-void save_at(void *fd, void *message)
-{
-    int f = *(int*)fd;
-    Message m = *(Message*)message;
-    
 }
 
 void buff_flush(char *buff, int size)

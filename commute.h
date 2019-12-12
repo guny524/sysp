@@ -16,6 +16,5 @@ typedef struct Message {
 void send_to(void *message, void *id);
 void receive_from(void *id);
 void buff_flush(char *buff, int size);
-void save_at(void *fd, void *message);
 
 #endif

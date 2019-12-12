@@ -1,7 +1,3 @@
-//내가 키보드 칠 때 기다리니까, 키보드 치는 거랑 클라이언트 받아서 화면에 뿌리는 거랑 스레드 나눠야 함
-//스레드 디테치를 쓰면 조인 필요 없음, 디테치 안쓰면 조인 필요함
-//print 들어가기 전에 뮤텍스 쓰는 거 가능 -> 물론 프린트는 중간에 간섭 안 받음
-
 #include<stdio.h>
 #include<stdlib.h>
 #include<unistd.h>
@@ -25,7 +21,7 @@
 int client_socks[5];
 
 void * Client_Echo(void *arg);
-void server();
+void server_init();
 
 void * Client_Echo(void *arg)/* argument로 client socket을 전달받음 */
 {
@@ -45,7 +41,7 @@ void * Client_Echo(void *arg)/* argument로 client socket을 전달받음 */
     }
     close(client_sock);
 }
-void server()
+void server_init()
 {
     //서버 소켓 오픈, 주소 초기화
     int server_sock;
@@ -110,11 +106,6 @@ void server()
         exit(1);
     }
 
-    result_code = pthread_create( &threads, NULL, Client_Echo, (void*)&client_sock); // create client thread
-    assert(!result_code);
-    result_code = pthread_detach(threads); // detach echo thread
-    assert(!result_code);
-
     //접속된 client 별 thread 생성하여 detach
     for (;;)
     {
@@ -138,7 +129,7 @@ int main(int argc, char ** argv)
     if(argc == 2)
     {
         strcpy(user_name, argv[1]);
-        server();
+        server_init();
     }
     else
     {
