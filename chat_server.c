@@ -1,5 +1,6 @@
 #include<stdio.h>
 #include<stdlib.h>
+#include<string.h>
 #include<unistd.h>
 #include<sys/socket.h>
 #include<netinet/in.h>
@@ -7,45 +8,178 @@
 
 #include<net/if.h>  //inet_ntop(), IFNAMSIZ
 #include<sys/ioctl.h>   //ioctl(), SIOCGIFADDR
-#define IP_ITERFACE_NAME "wlp5s0"
 
 #include<pthread.h>
 #include<assert.h>
 
-#include<fcntl.h>
 #include<mqueue.h>
 #include<sys/stat.h>
+#include<fcntl.h>
 
-#inlcude<commute.h>
+#include<time.h>
 
-int client_socks[5];
+#define IP_ITERFACE_NAME "wlp5s0"
 
-void * Client_Echo(void *arg);
-void server_init();
+#define CHAT_PORT_NUM 41194
+#define GAME_PORT_NUM 41195
 
-void * Client_Echo(void *arg)/* argument로 client socket을 전달받음 */
+#define BUFSIZE 1024
+#define USER_NAME_SIZE 20
+
+typedef struct Message {
+    char str[BUFSIZE];
+    char user_name[USER_NAME_SIZE];
+    time_t time;
+}message;
+
+typedef struct Argument{
+    int sock;
+    pthread_t thread;
+}argument;
+
+mqd_t mqds[5];
+int mqd_cnt=-1;
+
+void buff_flush(char *buff, int size)
 {
-    int client_sock;
-    client_sock = *(int*)arg;
-    char message[BUFSIZE];
-    int strLen;
+    for(int i=0;i<size;i++)
+        buff[i] = 0;
+}
+void *broad_cast(void *arg)
+{
+    mqd_t mqd_broad;
+    struct mq_attr attr;
+    int prio=1;
+    message m;
 
-    pthread_t threads;
-    int result_code;
+    attr.mq_maxmsg = 10;
+    attr.mq_msgsize = sizeof(message);
+	if ((mqd_broad = mq_open("/broad", O_RDWR | O_CREAT, 0644, &attr)) == (mqd_t) -1){
+		perror ("mqd_broad_open");
+		exit (1);
+	}
 
-    while ((strLen = read(client_sock, message, BUFSIZE)) != 0)
+    while (1)
     {
-        fputs(message, stdout);
-        write(client_sock, message, strLen);
-        buff_flush(message, BUFSIZE);
+        if (mq_getattr(mqd_broad, &attr) == -1)
+        {
+            perror ("message Quene Getattr");
+            exit (1);
+        }
+        if(attr.mq_curmsgs > 0)
+        {
+            if (mq_receive(mqd_broad, (char*)&m, sizeof(message), &prio) == -1)
+        	{
+        		perror ("receive_broad");
+        		exit (1);
+        	}
+            for(int i=0;i<mqd_cnt;i++)
+                mq_send(mqds[i], (const char*)&m, sizeof(message), prio);
+            if(strcmp(m.str,"snake!!\n")==0)
+            {
+                system("./game_server");
+            }
+        }
     }
-    close(client_sock);
+}
+void *sending(void *socket)
+{
+    mqd_t mqd_send;
+    struct mq_attr attr;
+    int prio;
+    int sock = *(int*)socket;
+    message m;
+    char name[20];
+
+    attr.mq_maxmsg = 10;
+    attr.mq_msgsize = sizeof(message);
+    sprintf(name, "/%d", sock);
+    if ((mqd_send = mq_open(name, O_RDWR | O_CREAT, 0644, &attr)) == (mqd_t) -1)
+    {
+		perror ("mqd_echo_open");
+		exit (1);
+	}
+
+    mqds[mqd_cnt++] = mqd_send;
+
+    while (1)
+    {
+        if (mq_getattr(mqd_send, &attr) == -1)
+        {
+            perror ("Message Quene Getattr");
+            exit (1);
+        }
+        if(attr.mq_curmsgs > 0)
+        {
+            if (mq_receive(mqd_send, (char*)&m, sizeof(message), &prio) == -1)
+        	{
+        		perror ("receive_send");
+        		exit (1);
+        	}
+            write(sock, &m, sizeof(message));
+        }
+    }
+}
+void *receiving(void *arg)
+{
+    message m;
+    int length;
+    int prio=1;
+    int sock = (*(argument*)arg).sock;
+    pthread_t thread = (*(argument*)arg).thread;
+    mqd_t mqd, mqd_broad;
+    char name[20];
+
+    if ((mqd_broad = mq_open("/broad", O_WRONLY)) == (mqd_t) -1){
+		perror ("mqd_broad_open");
+		exit (1);
+	}
+
+    while ((length = read(sock, &m, sizeof(message))) != 0)
+    {
+        m.time = time(NULL);
+        /*
+        for(int i=0;i<1024;i++)
+            printf("%c",m.str[i]);
+        printf(" - ");
+        for(int i=0;i<20;i++)
+            printf("%c",m.user_name[i]);
+        printf(" - ");
+        printf("%ld", m.time);
+        printf("\n");
+        */
+        printf("%s %s %ld\n", m.user_name, m.str, m.time);
+        if(strcmp(m.str,"q")==0)
+        {
+            printf("break");
+            break;
+        }
+        mq_send(mqd_broad, (const char*)&m, sizeof(message), prio);
+        buff_flush(m.str, strlen(m.str));
+    }
+
+    pthread_cancel(thread);
+    sprintf(name, "/%d", sock);
+    mqd = mq_open(name, O_RDWR);
+    for(int i=0;i<5;i++)
+    {
+        if(mqd == mqds[i])
+        {
+            mqds[i]=0;
+            for(int j=i;j<4;j++)
+                mqds[j] = mqds[j+1];
+            mqd_cnt--;
+        }
+    }
+    mq_close(mqd);
+    close(sock);
 }
 void server_init()
 {
     //서버 소켓 오픈, 주소 초기화
     int server_sock;
     struct sockaddr_in server_addr; //IPv4 address structure
+    int addr_size;
     //IP 주소 받아오기
     int ip_sock;
     struct ifreq ifr;
@@ -53,13 +187,12 @@ void server_init()
     //억셉트, 클라이언트 소켓
     int client_sock;
     struct sockaddr_in client_addr; //IPv4 address structure
-    int client_addr_size;
-    char message[BUFSIZE];
-    int str_len;
     //스레드
     pthread_t threads;
     int result_code;
 
+    argument arg;
+    void *void_arg;
 
     //소켓 열기
     server_sock = socket(PF_INET, SOCK_STREAM, 0);
@@ -73,7 +206,7 @@ void server_init()
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET; //Allows IPv4 socket
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);  //모든 주소의 client 접속 가능
-    server_addr.sin_port = htons(PORT_NUM);   // server socket binding
+    server_addr.sin_port = htons(CHAT_PORT_NUM);   // server socket binding
 
     //IP주소 받아오기
     ip_sock = socket(PF_INET, SOCK_STREAM, 0);
@@ -106,34 +239,46 @@ void server_init()
         exit(1);
     }
 
-    //접속된 client 별 thread 생성하여 detach
+    result_code = pthread_create( &threads, NULL, broad_cast, void_arg);
+    assert(!result_code);
+    result_code = pthread_detach(threads);
+    assert(!result_code);
+
     for (;;)
     {
-        client_addr_size = sizeof(client_addr);
-        client_sock = accept(server_sock, (struct sockaddr*) &client_addr, &client_addr_size);
-        //#억셉트 하면 방 인원수 표시 해야함
+        addr_size = sizeof(client_addr);
+        client_sock = accept(server_sock, (struct sockaddr*) &client_addr, &addr_size);
         if (client_sock == -1)
         {
             perror("accept() error");
             exit(1);
         }
-        printf("Connection from: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-        result_code = pthread_create( &threads, NULL, Client_Echo, (void*)&client_sock); // create client thread
-        assert(!result_code);
-        result_code = pthread_detach(threads); // detach echo thread
-        assert(!result_code);
+        else
+        {
+            printf("Connection from: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+
+            result_code = pthread_create( &threads, NULL, sending, (void*)&client_sock);
+            assert(!result_code);
+            result_code = pthread_detach(threads);
+            assert(!result_code);
+
+            arg.sock = client_sock;
+            arg.thread = threads;
+
+            result_code = pthread_create( &threads, NULL, receiving, (void*)&arg);
+            assert(!result_code);
+            result_code = pthread_detach(threads);
+            assert(!result_code);
+        }
     }
 }
 int main(int argc, char ** argv)
 {
-    if(argc == 2)
-    {
-        strcpy(user_name, argv[1]);
+    if(argc == 1)
         server_init();
-    }
     else
     {
-        printf("Usage server: %s <user-name> \n", argv[0]);
+        printf("Usage server: %s\n", argv[0]);
         exit(1);
     }
 

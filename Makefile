@@ -10,21 +10,31 @@ CFLAGS = -D_REENTRANT  -pthread -g -w #w 워닝지우는거 -Wall 모든워닝�
 
 LIBOBJS = ${LIBSRC:.c=.o}
 
-SERVER = server
-CLIENT = client
-COMMUTE = commute
-PRINT = print
+CHAT_SERVER = chat_server
+CHAT_CLIENT = chat_client
+GAME_SERVER = game_server
+GAME_CLIENT = game_client
 
 $@.o : $@.c
 	$(CC) $(CFLAGS) -c -o $<
 
-all: sv cl
+all: chat game
 
-sv: ${LIBOBJS} ${SERVER:=.o} ${COMMUTE:=.o} ${PRINT:=.o}
-	${CC} -o ${SERVER} ${SERVER:=.o} ${COMMUTE:=.o} ${PRINT:=.o} ${LDFLAGS} ${LIBOBJS} ${CFLAGS}
+chat: chat_server chat_client
 
-cl: ${LIBOBJS} ${CLINET:=.o} ${COMMUTE:=.o} ${PRINT:=.o}
-	${CC} -o ${CLIENT} ${CLIENT:=.o} ${COMMUTE:=.o} ${PRINT:=.o} ${LDFLAGS} ${LIBOBJS} ${CFLAGS}
+game: game_server game_client
+
+chat_server: ${LIBOBJS} ${CHAT_SERVER:=.o}
+	${CC} -o ${CHAT_SERVER} ${CHAT_SERVER:=.o} ${LDFLAGS} ${LIBOBJS} ${CFLAGS}
+
+chat_client: ${LIBOBJS} ${CHAT_CLIENT:=.o}
+	${CC} -o ${CHAT_CLIENT} ${CHAT_CLIENT:=.o} ${LDFLAGS} ${LIBOBJS} ${CFLAGS}
+
+game_server: ${LIBOBJS} ${GAME_SERVER:=.o}
+	${CC} -o ${GAME_SERVER} ${GAME_SERVER:=.o} ${LDFLAGS} ${LIBOBJS} ${CFLAGS}
+
+game_client: ${LIBOBJS} ${GAME_CLIENT:=.o}
+	${CC} -o ${GAME_CLIENT} ${GAME_CLIENT:=.o} ${LDFLAGS} ${LIBOBJS} ${CFLAGS}
 
 rm :
-	${RM} *.o ${SERVER} ${CLIENT} ${LIBOBJS} core tags
+	${RM} *.o ${CHAT_SERVER} ${CHAT_CLIENT} ${GAME_SERVER} ${GAME_CLIENT} ${LIBOBJS} core tags
