@@ -138,23 +138,26 @@ void *receiving(void *arg)
     while ((length = read(sock, &m, sizeof(message))) != 0)
     {
         m.time = time(NULL);
-        /*
-        for(int i=0;i<1024;i++)
-            printf("%c",m.str[i]);
-        printf(" - ");
-        for(int i=0;i<20;i++)
-            printf("%c",m.user_name[i]);
-        printf(" - ");
-        printf("%ld", m.time);
-        printf("\n");
-        */
-        printf("%s %s %ld\n", m.user_name, m.str, m.time);
+        mq_send(mqd_broad, (const char*)&m, sizeof(message), prio);
         if(strcmp(m.str,"q")==0)
         {
-            printf("break");
-            break;
+            printf("close");
+            pthread_cancel(thread);
+            sprintf(name, "/%d", sock);
+            mqd = mq_open(name, O_RDWR);
+            for(int i=0;i<5;i++)
+            {
+                if(mqd == mqds[i])
+                {
+                    mqds[i]=0;
+                    for(int j=i;j<4;j++)
+                        mqds[j] = mqds[j+1];
+                    mqd_cnt--;
+                }
+            }
+            mq_close(mqd);
+            close(sock);
         }
-        mq_send(mqd_broad, (const char*)&m, sizeof(message), prio);
         buff_flush(m.str, strlen(m.str));
     }
 

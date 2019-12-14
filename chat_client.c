@@ -12,6 +12,48 @@
 #include<fcntl.h>
 #include<assert.h>
 #include<time.h>
+#include<termios.h>	//struct tertmios, tcgetattr(), tcsetattr();
+
+struct termios old, current;
+void initTermios(int echo) {
+	struct termios old, current;
+	tcgetattr(0, &old); /* grab old terminal i/o settings */
+	current = old; /* make new settings same as old settings */
+	current.c_lflag &= ~ICANON; /* disable buffered i/o */
+	if (echo) {
+		current.c_lflag |= ECHO; /* set echo mode */
+	}
+	else {
+		current.c_lflag &= ~ECHO; /* set no echo mode */
+	}
+	tcsetattr(0, TCSANOW, &current); /* use these new terminal i/o settings now */
+}
+int kbhit(void)
+{
+	struct termios oldt, newt;
+	int ch;
+	int oldf;
+
+	tcgetattr(STDIN_FILENO, &oldt);
+	newt = oldt;
+	newt.c_lflag &= ~(ICANON | ECHO);
+	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+	oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
+	fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
+
+	ch = getchar();
+
+	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+	fcntl(STDIN_FILENO, F_SETFL, oldf);
+
+	if (ch != EOF)
+	{
+		ungetc(ch, stdin);
+		return 1;
+	}
+
+	return 0;
+}
 
 #define CHAT_PORT_NUM 41194
 #define GAME_PORT_NUM 41195
@@ -26,6 +68,7 @@ typedef struct Message {
 }message;
 
 char user_name[USER_NAME_SIZE];
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void *print(void *arg)
 {
@@ -56,7 +99,9 @@ void *print(void *arg)
         		perror ("receive");
         		exit (1);
         	}
-            printf("%s: %s %X\n", m.user_name, m.str, m.time);
+            pthread_mutex_lock(&mutex);
+            printf("%s %s %ld\n", m.user_name, m.str, m.time);
+            pthread_mutex_unlock(&mutex);
         }
     }
 }
@@ -167,18 +212,23 @@ void client(char *ip_address)
     strcpy(m.user_name, user_name);
     while(1)
     {
-        scanf("%s",m.str);
-        if(write(sock, &m, sizeof(message))==-1)
+        if(kbhit())
         {
-            perror("write");
-            exit(1);
-        }
-        if (!strcmp(m.str, "q"))
-        {
-            pthread_cancel(thread_receive);
-            pthread_cancel(thread_check);
-            pthread_cancel(thread_print);
-            break;
+            pthread_mutex_lock(&mutex);
+            scanf("%s",m.str);
+            pthread_mutex_unlock(&mutex);
+            if(write(sock, &m, sizeof(message))==-1)
+            {
+                perror("write");
+                exit(1);
+            }
+            if (!strcmp(m.str, "q"))
+            {
+                pthread_cancel(thread_receive);
+                pthread_cancel(thread_check);
+                pthread_cancel(thread_print);
+                break;
+            }
         }
     }
 }
