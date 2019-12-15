@@ -21,7 +21,6 @@
 #define IP_ITERFACE_NAME "wlp5s0"
 
 #define CHAT_PORT_NUM 41194
-#define GAME_PORT_NUM 41195
 
 #define BUFSIZE 1024
 #define USER_NAME_SIZE 20
@@ -32,150 +31,93 @@ typedef struct Message {
     time_t time;
 }message;
 
-typedef struct Argument{
-    int sock;
-    pthread_t thread;
-}argument;
+#define CLIENT_NUM 5
+int clients[CLIENT_NUM];
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
-mqd_t mqds[5];
-int mqd_cnt=-1;
-
-void buff_flush(char *buff, int size)
+void *receiving(void *socket)
 {
-    for(int i=0;i<size;i++)
-        buff[i] = 0;
-}
-void *broad_cast(void *arg)
-{
-    mqd_t mqd_broad;
-    struct mq_attr attr;
-    int prio=1;
-    message m;
-
-    attr.mq_maxmsg = 10;
-    attr.mq_msgsize = sizeof(message);
-	if ((mqd_broad = mq_open("/broad", O_RDWR | O_CREAT, 0644, &attr)) == (mqd_t) -1){
-		perror ("mqd_broad_open");
-		exit (1);
-	}
-
-    while (1)
-    {
-        if (mq_getattr(mqd_broad, &attr) == -1)
-        {
-            perror ("message Quene Getattr");
-            exit (1);
-        }
-        if(attr.mq_curmsgs > 0)
-        {
-            if (mq_receive(mqd_broad, (char*)&m, sizeof(message), &prio) == -1)
-        	{
-        		perror ("receive_broad");
-        		exit (1);
-        	}
-            for(int i=0;i<mqd_cnt;i++)
-                mq_send(mqds[i], (const char*)&m, sizeof(message), prio);
-            if(strcmp(m.str,"snake!!\n")==0)
-            {
-                system("./game_server");
-            }
-        }
-    }
-}
-void *sending(void *socket)
-{
-    mqd_t mqd_send;
-    struct mq_attr attr;
-    int prio;
     int sock = *(int*)socket;
+    mqd_t mqd_broad;
+    int prio=1;
     message m;
-    char name[20];
 
-    attr.mq_maxmsg = 10;
-    attr.mq_msgsize = sizeof(message);
-    sprintf(name, "/%d", sock);
-    if ((mqd_send = mq_open(name, O_RDWR | O_CREAT, 0644, &attr)) == (mqd_t) -1)
+    pthread_mutex_lock (&mutex);
+    for(int i=0;i<CLIENT_NUM;i++)
     {
-		perror ("mqd_echo_open");
-		exit (1);
-	}
-
-    mqds[mqd_cnt++] = mqd_send;
-
-    while (1)
-    {
-        if (mq_getattr(mqd_send, &attr) == -1)
+        if(clients[i] == 0)
         {
-            perror ("Message Quene Getattr");
-            exit (1);
-        }
-        if(attr.mq_curmsgs > 0)
-        {
-            if (mq_receive(mqd_send, (char*)&m, sizeof(message), &prio) == -1)
-        	{
-        		perror ("receive_send");
-        		exit (1);
-        	}
-            write(sock, &m, sizeof(message));
+            clients[i] = sock;
+            break;
         }
     }
-}
-void *receiving(void *arg)
-{
-    message m;
-    int length;
-    int prio=1;
-    int sock = (*(argument*)arg).sock;
-    pthread_t thread = (*(argument*)arg).thread;
-    mqd_t mqd, mqd_broad;
-    char name[20];
+    pthread_mutex_unlock (&mutex);
 
     if ((mqd_broad = mq_open("/broad", O_WRONLY)) == (mqd_t) -1){
 		perror ("mqd_broad_open");
 		exit (1);
 	}
 
-    while ((length = read(sock, &m, sizeof(message))) != 0)
+    while ((read(sock, &m, sizeof(message))) != 0)
     {
         m.time = time(NULL);
         mq_send(mqd_broad, (const char*)&m, sizeof(message), prio);
-        if(strcmp(m.str,"q")==0)
-        {
-            printf("close");
-            pthread_cancel(thread);
-            sprintf(name, "/%d", sock);
-            mqd = mq_open(name, O_RDWR);
-            for(int i=0;i<5;i++)
-            {
-                if(mqd == mqds[i])
-                {
-                    mqds[i]=0;
-                    for(int j=i;j<4;j++)
-                        mqds[j] = mqds[j+1];
-                    mqd_cnt--;
-                }
-            }
-            mq_close(mqd);
-            close(sock);
-        }
-        buff_flush(m.str, strlen(m.str));
     }
 
-    pthread_cancel(thread);
-    sprintf(name, "/%d", sock);
-    mqd = mq_open(name, O_RDWR);
-    for(int i=0;i<5;i++)
+    pthread_mutex_lock (&mutex);
+    for(int i=0;i<CLIENT_NUM;i++)
     {
-        if(mqd == mqds[i])
+        if(clients[i] == sock)
         {
-            mqds[i]=0;
-            for(int j=i;j<4;j++)
-                mqds[j] = mqds[j+1];
-            mqd_cnt--;
+            clients[i] = 0;
+            break;
         }
     }
-    mq_close(mqd);
+    pthread_mutex_unlock (&mutex);
+
     close(sock);
+}
+void *broad(void *arg)
+{
+    mqd_t mqd_broad;
+    struct mq_attr attr;
+    message m;
+
+    attr.mq_maxmsg = 10;
+    attr.mq_msgsize = sizeof(message);
+    if ((mqd_broad = mq_open("/broad", O_RDWR | O_CREAT, 0644, &attr)) == (mqd_t) -1)
+    {
+        perror ("mqd_broad_create");
+        exit (1);
+    }
+
+    while(1)
+    {
+        if (mq_getattr(mqd_broad, &attr) == -1)
+        {
+            perror ("Message Quene Getattr");
+            exit (1);
+        }
+        if(attr.mq_curmsgs > 0)
+        {
+            if (mq_receive(mqd_broad, (char*)&m, sizeof(message), NULL) == -1)
+            {
+                perror ("broad_mq_receive");
+                exit (1);
+            }
+            pthread_mutex_lock (&mutex);
+            for(int i=0;i<CLIENT_NUM;i++)
+            {
+                if(clients[i] != 0)
+                    write(clients[i], &m, sizeof(message));
+            }
+            pthread_mutex_unlock (&mutex);
+            if(strcmp(m.str,"snake!!")==0)
+            {
+                system("./game_server");
+            }
+        }
+    }
 }
 void server_init()
 {
@@ -194,7 +136,6 @@ void server_init()
     pthread_t threads;
     int result_code;
 
-    argument arg;
     void *void_arg;
 
     //소켓 열기
@@ -242,7 +183,7 @@ void server_init()
         exit(1);
     }
 
-    result_code = pthread_create( &threads, NULL, broad_cast, void_arg);
+    result_code = pthread_create( &threads, NULL, broad, void_arg);
     assert(!result_code);
     result_code = pthread_detach(threads);
     assert(!result_code);
@@ -260,20 +201,14 @@ void server_init()
         {
             printf("Connection from: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 
-            result_code = pthread_create( &threads, NULL, sending, (void*)&client_sock);
-            assert(!result_code);
-            result_code = pthread_detach(threads);
-            assert(!result_code);
-
-            arg.sock = client_sock;
-            arg.thread = threads;
-
-            result_code = pthread_create( &threads, NULL, receiving, (void*)&arg);
+            result_code = pthread_create( &threads, NULL, receiving, (void*)&client_sock);
             assert(!result_code);
             result_code = pthread_detach(threads);
             assert(!result_code);
         }
     }
+
+    close(server_sock);
 }
 int main(int argc, char ** argv)
 {
